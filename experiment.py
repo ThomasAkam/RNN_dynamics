@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -29,11 +26,11 @@ class TrainConfig:
     seed: int = 7
 
 
-def kfold_indices(n: int, k: int, seed: int) -> List[Tuple[np.ndarray, np.ndarray]]:
+def kfold_indices(n, k, seed):
     rng = np.random.default_rng(seed)
     perm = rng.permutation(n)
     folds = np.array_split(perm, k)
-    splits: List[Tuple[np.ndarray, np.ndarray]] = []
+    splits = []
 
     for i in range(k):
         val_idx = folds[i]
@@ -42,7 +39,7 @@ def kfold_indices(n: int, k: int, seed: int) -> List[Tuple[np.ndarray, np.ndarra
     return splits
 
 
-def one_step_r2(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
+def one_step_r2(y_true, y_pred):
     """
     R^2 over all batches/timesteps/dimensions for one-step-ahead predictions.
     """
@@ -55,13 +52,13 @@ def one_step_r2(y_true: torch.Tensor, y_pred: torch.Tensor) -> float:
 
 
 def train_one_fold(
-    data_train: torch.Tensor,
-    data_val: torch.Tensor,
-    obs_dim: int,
-    hidden_units: int,
-    config: TrainConfig,
-    device: torch.device,
-) -> Dict[str, float]:
+    data_train,
+    data_val,
+    obs_dim,
+    hidden_units,
+    config,
+    device,
+):
     model = TinyGRUPredictor(
         obs_dim=obs_dim,
         hidden_units=hidden_units,
@@ -111,16 +108,16 @@ def train_one_fold(
 
 
 def cross_validated_experiment(
-    observations: np.ndarray,
-    hidden_unit_list: List[int],
-    config: TrainConfig,
-) -> Dict[int, Dict[str, float]]:
+    observations,
+    hidden_unit_list,
+    config,
+):
     n_seq, _, obs_dim = observations.shape
     splits = kfold_indices(n=n_seq, k=config.k_folds, seed=config.seed)
     data_t = torch.tensor(observations, dtype=torch.float32)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    results: Dict[int, Dict[str, float]] = {}
+    results = {}
 
     for hidden_units in tqdm(hidden_unit_list, desc="Hidden units"):
         fold_mse = []
@@ -152,17 +149,17 @@ def cross_validated_experiment(
 
 
 def cross_validated_pre_mlp_experiment(
-    observations: np.ndarray,
-    pre_mlp_dims: List[int | None],
-    hidden_units: int,
-    base_config: TrainConfig,
-) -> Dict[int | None, Dict[str, float]]:
+    observations,
+    pre_mlp_dims,
+    hidden_units,
+    base_config,
+):
     n_seq, _, obs_dim = observations.shape
     splits = kfold_indices(n=n_seq, k=base_config.k_folds, seed=base_config.seed)
     data_t = torch.tensor(observations, dtype=torch.float32)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    results: Dict[int | None, Dict[str, float]] = {}
+    results = {}
 
     for pre_mlp_dim in tqdm(pre_mlp_dims, desc="Input MLP"):
         fold_mse = []
@@ -204,13 +201,13 @@ def cross_validated_pre_mlp_experiment(
 
 
 def print_results(
-    results: Dict[int | None, Dict[str, float]],
-    label: str,
-) -> None:
+    results,
+    label,
+):
     print(f"\nCross-validated one-step prediction accuracy vs {label}")
     print(f"{label} | mse_mean ± mse_std | r2_mean ± r2_std")
     print("-" * 58)
-    def sort_key(value: int | None) -> tuple[bool, int]:
+    def sort_key(value):
         return (value is None, value if value is not None else -1)
 
     for key in sorted(results.keys(), key=sort_key):
@@ -223,10 +220,10 @@ def print_results(
         )
 
 
-def run_experiment() -> None:
+def run_experiment():
     sim_config = SimulationConfig(
-        num_sequences=100,
-        seq_len=200,
+        num_sequences=40,
+        seq_len=50,
         obs_dim=8,
         process_noise_std=0.02,
         obs_noise_std=0.08,
@@ -238,7 +235,7 @@ def run_experiment() -> None:
         weight_decay=1e-5,
         batch_size=32,
         epochs=120,
-        k_folds=4,
+        k_folds=2,
         pre_mlp_dim=None,
         seed=7,
     )

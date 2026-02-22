@@ -1,8 +1,4 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -18,19 +14,19 @@ class SimulationConfig:
     seed: int = 7
 
 
-def set_seeds(seed: int) -> None:
+def set_seeds(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
 
 def generate_latent_nonlinear_oscillator(
-    num_sequences: int,
-    seq_len: int,
-    process_noise_std: float,
-    dt: float = 0.05,
-    omega: float = 1.3,
-    mu: float = 1.2,
-) -> np.ndarray:
+    num_sequences,
+    seq_len,
+    process_noise_std,
+    dt=0.05,
+    omega=1.3,
+    mu=1.2,
+):
     """
     2D noisy nonlinear oscillator (stochastic Van der Pol-like system):
         x' = v
@@ -59,21 +55,21 @@ def generate_latent_nonlinear_oscillator(
 
 
 def project_latent_to_observations(
-    z: np.ndarray,
-    obs_dim: int,
-    obs_noise_std: float,
-) -> np.ndarray:
+    z,
+    obs_dim,
+    obs_noise_std,
+):
     C = np.random.randn(obs_dim, z.shape[-1]).astype(np.float32)
     y = z @ C.T
     y += np.random.randn(*y.shape).astype(np.float32) * obs_noise_std
     return y.astype(np.float32)
 
 def simulate_observations(
-    config: SimulationConfig,
-    dt: float = 0.05,
-    omega: float = 1.3,
-    mu: float = 1.2,
-) -> Tuple[np.ndarray, np.ndarray]:
+    config,
+    dt=0.05,
+    omega=1.3,
+    mu=1.2,
+):
     """
     Create observation trajectories from 2D noisy nonlinear oscillator latents.
     Latent dimension is fixed to 2 for this simulator.
@@ -96,12 +92,12 @@ def simulate_observations(
 
 
 def visualize_generator_samples(
-    observations: np.ndarray,
-    latent: np.ndarray,
-    output_path: str = "generator_visualization.png",
-    num_sequences_to_plot: int = 8,
-    num_obs_channels: int = 3,
-) -> None:
+    observations,
+    latent,
+    output_path="generator_visualization.png",
+    num_sequences_to_plot=8,
+    num_obs_channels=3,
+):
     """
     Visualize simulated generator output:
     - Left: latent phase portrait (2D oscillator trajectories)

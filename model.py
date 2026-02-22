@@ -1,7 +1,3 @@
-from __future__ import annotations
-
-from typing import Tuple
-
 import torch
 from torch import nn
 
@@ -12,7 +8,7 @@ class TinyGRUPredictor(nn.Module):
     Predicts y_{t+1} from y_{1:t} with one-step-ahead supervision.
     """
 
-    def __init__(self, obs_dim: int, hidden_units: int, pre_mlp_dim: int | None = None):
+    def __init__(self, obs_dim, hidden_units, pre_mlp_dim=None):
         super().__init__()
         self.pre_mlp_dim = pre_mlp_dim
         if pre_mlp_dim is None:
@@ -34,7 +30,7 @@ class TinyGRUPredictor(nn.Module):
         )
         self.output_map = nn.Linear(hidden_units, obs_dim)
 
-    def forward(self, obs_seq: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, obs_seq):
         if self.pre_mlp is None:
             x = self.input_map(obs_seq)
         else:
