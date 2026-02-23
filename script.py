@@ -8,7 +8,7 @@ from simulation import SimulationConfig, simulate_observations
 from model import GRUPredictor
 
 # Reproducibility
-seed = 0
+seed = 1
 torch.manual_seed(seed)
 np.random.seed(seed)
 
@@ -84,35 +84,17 @@ def plot_validation_results(true_obs, pred_obs, gru_activity, true_latents):
     fig.tight_layout()
     plt.show()
 
-# Training
-def train_example():
-    # dims and hyperparams
-    obs_dim = 5          # observed vector size
-    gru_hidden = 2
-    seq_len = 200
-    n_train = 1024
-    n_val = 256
-    batch_size = 64
-    epochs = 30
-    lr = 1e-3
 
-    # make synthetic data
-    sim_cfg = SimulationConfig(
-        num_sequences=n_train + n_val,
-        seq_len=seq_len,
-        obs_dim=obs_dim,
-        process_noise_std=0.02,
-        obs_noise_std=0.2,
-        seed=seed,
-    )
-    obs, latents = simulate_observations(sim_cfg)
-    train_obs = torch.from_numpy(obs[:n_train]).to(device)
-    val_obs = torch.from_numpy(obs[n_train:]).to(device)
-    val_latent = torch.from_numpy(latents[n_train:]).to(device) 
-
-    model = GRUPredictor(obs_dim, gru_hidden, embed_dim=8, decode_dim=8).to(device)
-    opt = optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.MSELoss()
+def train_model(
+    model,
+    train_obs,
+    val_obs,
+    epochs,
+    batch_size,
+    optimizer,
+    loss_fn,
+    reg_lambda=0.0,
+):
     prev_val_loss = None
     val_preds = None
     gru_activity = None
@@ -130,20 +112,21 @@ def train_example():
         train_loss = 0.0
         batches = 0
         for batch in iterate_batches(train_obs):
-            opt.zero_grad()
-            preds = model(batch)                   # (B, T-1, obs_dim)
-            target = batch[:, 1:, :]               # true x_{t+1}
+            optimizer.zero_grad()
+            preds, gru_activity = model(batch, return_activations=True)
+            target = batch[:, 1:, :]
             loss = loss_fn(preds, target)
+            if reg_lambda > 0.0: # Apply L2 regularization to GRU activations.
+                loss += reg_lambda * gru_activity.pow(2).mean()
             loss.backward()
-            opt.step()
+            optimizer.step()
             train_loss += loss.item()
             batches += 1
         train_loss /= batches
 
-        # validation
         model.eval()
         with torch.no_grad():
-            val_preds, gru_activity = model(val_obs, return_activations=True)
+            val_preds, val_activity = model(val_obs, return_activations=True)
             val_loss = loss_fn(val_preds, val_obs[:, 1:, :]).item()
 
         if prev_val_loss is not None and val_loss > prev_val_loss:
@@ -158,9 +141,55 @@ def train_example():
         if ep % 5 == 0 or ep == 1:
             print(f"Epoch {ep:3d} | train_loss={train_loss:.6f} | val_loss={val_loss:.6f}")
 
+    return val_preds, val_activity
+
+# Training
+def train_example():
+    # dims and hyperparams
+    obs_dim = 5          # observed vector size
+    gru_hidden = 2
+    seq_len = 200
+    n_train = 1024
+    n_val = 256
+    batch_size = 64
+    epochs = 50
+    lr = 1e-2
+    reg_lambda = 1
+
+    # Generate data
+    sim_cfg = SimulationConfig(
+        num_sequences=n_train + n_val,
+        seq_len=seq_len,
+        obs_dim=obs_dim,
+        process_noise_std=0.02,
+        obs_noise_std=0.2,
+        seed=seed,
+    )
+    obs, latents = simulate_observations(sim_cfg)
+    train_obs = torch.from_numpy(obs[:n_train]).to(device)
+    val_obs = torch.from_numpy(obs[n_train:]).to(device)
+    val_latents = torch.from_numpy(latents[n_train:]).to(device) 
+
+    # Setup model, optimizer, and loss function
+    model = GRUPredictor(obs_dim, gru_hidden, embed_dim=8, decode_dim=8).to(device)
+    opt = optim.Adam(model.parameters(), lr=lr)
+    loss_fn = nn.MSELoss()
+
+    # Train model
+    val_preds, val_activity = train_model(
+        model=model,
+        train_obs=train_obs,
+        val_obs=val_obs,
+        epochs=epochs,
+        batch_size=batch_size,
+        optimizer=opt,
+        loss_fn=loss_fn,
+        reg_lambda=reg_lambda,
+    )
+
     # Plot predictions vs true and GRU activations for a validation sequence
 
-    plot_validation_results(val_obs, val_preds, gru_activity, val_latent)
+    plot_validation_results(val_obs, val_preds, val_activity, val_latents)
 
 if __name__ == "__main__":
     train_example()
