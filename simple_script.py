@@ -3,95 +3,119 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt 
+
 from simulation import SimulationConfig, simulate_observations
+from model import GRUPredictor
 
 # Reproducibility
 seed = 0
 torch.manual_seed(seed)
 np.random.seed(seed)
 
+# Cuda config
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Plot_validation_results ----------------------------------------------------
 
-# Model
-class GRUPredictor(nn.Module):
-    def __init__(self, obs_dim, hidden_size):
-        super().__init__()
-        self.gru = nn.GRU(obs_dim, hidden_size, batch_first=True)
-        self.output_map = nn.Linear(hidden_size, obs_dim)
+def plot_validation_results(true_obs, pred_obs, gru_activity, true_latents):
+    """Plot true vs predicted observations, GRU activations, and phase portraits
+    for true latents and GRU activations."""
 
-    def forward(self, x, return_activations=False):
-        outputs, _ = self.gru(x[:, :-1])
-        preds = self.output_map(outputs)
-        if return_activations:
-            return preds, outputs
-        return preds
+    # Setup axes.
+    fig = plt.figure(figsize=(12, 11))
+    gs = fig.add_gridspec(3, 2)
+    obs_ax = fig.add_subplot(gs[0, :])
+    act_ax = fig.add_subplot(gs[1, :], sharex=obs_ax)
+    true_phase_ax = fig.add_subplot(gs[2, 0])
+    gru_phase_ax = fig.add_subplot(gs[2, 1])
 
+    # Plot true vs predicted observations.
+    obs_dim = true_obs.shape[2]
 
-class GRUPredictorWithMLP(nn.Module):
-    def __init__(self, obs_dim, hidden_size, embed_dim=8, decode_dim=8):
-        super().__init__()
-        self.input_embed = nn.Sequential(
-            nn.Linear(obs_dim, embed_dim),
-            nn.ReLU(),
+    colors = plt.get_cmap("tab10")(np.linspace(0, 1, obs_dim))
+    for d in range(obs_dim):
+        series_color = colors[d]
+        obs_ax.plot(
+            true_obs[0, 1:, d].cpu().numpy(),
+            color=series_color,
+            linestyle="-",
+            label=f"dim_{d} true",
         )
-        self.gru = nn.GRU(embed_dim, hidden_size, batch_first=True)
-        self.output_decode = nn.Sequential(
-            nn.Linear(hidden_size, decode_dim),
-            nn.ReLU(),
-            nn.Linear(decode_dim, obs_dim),
+        obs_ax.plot(
+            pred_obs[0, :, d].cpu().numpy(),
+            color=series_color,
+            linestyle="--",
+            label=f"dim_{d} pred",
         )
 
-    def forward(self, x, return_activations=False):
-        embedded = self.input_embed(x[:, :-1])
-        outputs, _ = self.gru(embedded)
-        preds = self.output_decode(outputs)
-        if return_activations:
-            return preds, outputs
-        return preds
+    # Plot GRU activations.
+    for unit in range(gru_activity.shape[2]):
+        act_ax.plot(
+            gru_activity[0, :, unit].cpu().numpy(),
+            label=f"unit_{unit}",
+        )
 
+    obs_ax.legend()
+    obs_ax.set_title("Predictions vs True for a Validation Sequence")
+    obs_ax.set_ylabel("Observation Value")
 
+    act_ax.legend()
+    act_ax.set_title("GRU Unit Activation Timeseries")
+    act_ax.set_xlabel("Time Step")
+    act_ax.set_ylabel("Activation")
+
+    # Plot phase portraits for true latents and GRU activations.
+    true_phase_ax.plot(
+        true_latents[0, :, 0].cpu().numpy(),
+        true_latents[0, :, 1].cpu().numpy(),
+    )
+    true_phase_ax.set_title("True Latent Phase Portrait")
+    true_phase_ax.set_xlabel("latent x")
+    true_phase_ax.set_ylabel("latent v")
+
+    gru_phase_ax.plot(
+        gru_activity[0, :, 0].cpu().numpy(),
+        gru_activity[0, :, 1].cpu().numpy(),
+    )
+    gru_phase_ax.set_title("GRU Latent Phase Portrait")
+    gru_phase_ax.set_xlabel("gru unit 0")
+    gru_phase_ax.set_ylabel("gru unit 1")
+
+    fig.tight_layout()
+    plt.show()
 
 # Training
 def train_example():
     # dims and hyperparams
     obs_dim = 5          # observed vector size
     gru_hidden = 2
-    seq_len = 500
+    seq_len = 200
     n_train = 1024
     n_val = 256
     batch_size = 64
-    epochs = 1000
+    epochs = 30
     lr = 1e-3
 
     # make synthetic data
-    train_cfg = SimulationConfig(
-        num_sequences=n_train,
+    sim_cfg = SimulationConfig(
+        num_sequences=n_train + n_val,
         seq_len=seq_len,
         obs_dim=obs_dim,
-        process_noise_std=0.01,
-        obs_noise_std=0.1,
+        process_noise_std=0.02,
+        obs_noise_std=0.2,
         seed=seed,
     )
-    val_cfg = SimulationConfig(
-        num_sequences=n_val,
-        seq_len=seq_len,
-        obs_dim=obs_dim,
-        process_noise_std=0.01,
-        obs_noise_std=0.1,
-        seed=seed + 1,
-    )
-    train_obs, _ = simulate_observations(train_cfg)
-    val_obs, val_latent = simulate_observations(val_cfg)
-    train_x = torch.from_numpy(train_obs).to(device)
-    val_x = torch.from_numpy(val_obs).to(device)
-    val_z = torch.from_numpy(val_latent).to(device)
+    obs, latents = simulate_observations(sim_cfg)
+    train_obs = torch.from_numpy(obs[:n_train]).to(device)
+    val_obs = torch.from_numpy(obs[n_train:]).to(device)
+    val_latent = torch.from_numpy(latents[n_train:]).to(device) 
 
-    #model = GRUPredictor(obs_dim, gru_hidden).to(device)
-    model = GRUPredictorWithMLP(obs_dim, gru_hidden).to(device)
+    model = GRUPredictor(obs_dim, gru_hidden, embed_dim=8, decode_dim=8).to(device)
     opt = optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
     prev_val_loss = None
+    val_preds = None
+    gru_activity = None
 
     def iterate_batches(x_tensor):
         n = x_tensor.shape[0]
@@ -105,7 +129,7 @@ def train_example():
         model.train()
         train_loss = 0.0
         batches = 0
-        for batch in iterate_batches(train_x):
+        for batch in iterate_batches(train_obs):
             opt.zero_grad()
             preds = model(batch)                   # (B, T-1, obs_dim)
             target = batch[:, 1:, :]               # true x_{t+1}
@@ -119,8 +143,8 @@ def train_example():
         # validation
         model.eval()
         with torch.no_grad():
-            preds_val = model(val_x)
-            val_loss = loss_fn(preds_val, val_x[:, 1:, :]).item()
+            val_preds, gru_activity = model(val_obs, return_activations=True)
+            val_loss = loss_fn(val_preds, val_obs[:, 1:, :]).item()
 
         if prev_val_loss is not None and val_loss > prev_val_loss:
             print(
@@ -135,67 +159,8 @@ def train_example():
             print(f"Epoch {ep:3d} | train_loss={train_loss:.6f} | val_loss={val_loss:.6f}")
 
     # Plot predictions vs true and GRU activations for a validation sequence
-    seq = val_x[:1]                       # (1, T, obs_dim)
-    with torch.no_grad():
-        preds, activations = model(seq, return_activations=True)
-    true = seq[:, 1:, :]
 
-    fig = plt.figure(figsize=(12, 11))
-    gs = fig.add_gridspec(3, 2)
-    obs_ax = fig.add_subplot(gs[0, :])
-    act_ax = fig.add_subplot(gs[1, :], sharex=obs_ax)
-    true_phase_ax = fig.add_subplot(gs[2, 0])
-    gru_phase_ax = fig.add_subplot(gs[2, 1])
-
-    colors = plt.get_cmap("tab10")(np.linspace(0, 1, obs_dim))
-    for d in range(obs_dim):
-        series_color = colors[d]
-        obs_ax.plot(
-            true[0, :, d].cpu().numpy(),
-            color=series_color,
-            linestyle="-",
-            label=f"dim_{d} true",
-        )
-        obs_ax.plot(
-            preds[0, :, d].cpu().numpy(),
-            color=series_color,
-            linestyle="--",
-            label=f"dim_{d} pred",
-        )
-
-    for unit in range(gru_hidden):
-        act_ax.plot(
-            activations[0, :, unit].cpu().numpy(),
-            label=f"unit_{unit}",
-        )
-
-    obs_ax.legend()
-    obs_ax.set_title("Predictions vs True for a Validation Sequence")
-    obs_ax.set_ylabel("Observation Value")
-
-    act_ax.legend()
-    act_ax.set_title("GRU Unit Activation Timeseries")
-    act_ax.set_xlabel("Time Step")
-    act_ax.set_ylabel("Activation")
-
-    true_phase_ax.plot(
-        val_z[0, :, 0].cpu().numpy(),
-        val_z[0, :, 1].cpu().numpy(),
-    )
-    true_phase_ax.set_title("True Latent Phase Portrait")
-    true_phase_ax.set_xlabel("latent x")
-    true_phase_ax.set_ylabel("latent v")
-
-    gru_phase_ax.plot(
-        activations[0, :, 0].cpu().numpy(),
-        activations[0, :, 1].cpu().numpy(),
-    )
-    gru_phase_ax.set_title("GRU Latent Phase Portrait")
-    gru_phase_ax.set_xlabel("gru unit 0")
-    gru_phase_ax.set_ylabel("gru unit 1")
-
-    fig.tight_layout()
-    plt.show()
+    plot_validation_results(val_obs, val_preds, gru_activity, val_latent)
 
 if __name__ == "__main__":
     train_example()
