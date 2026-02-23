@@ -20,9 +20,11 @@ class GRUPredictor(nn.Module):
         self.gru = nn.GRU(obs_dim, hidden_size, batch_first=True)
         self.output_map = nn.Linear(hidden_size, obs_dim)
 
-    def forward(self, x):
+    def forward(self, x, return_activations=False):
         outputs, _ = self.gru(x[:, :-1])
         preds = self.output_map(outputs)
+        if return_activations:
+            return preds, outputs
         return preds
 
 
@@ -40,10 +42,12 @@ class GRUPredictorWithMLP(nn.Module):
             nn.Linear(decode_dim, obs_dim),
         )
 
-    def forward(self, x):
+    def forward(self, x, return_activations=False):
         embedded = self.input_embed(x[:, :-1])
         outputs, _ = self.gru(embedded)
         preds = self.output_decode(outputs)
+        if return_activations:
+            return preds, outputs
         return preds
 
 
@@ -129,30 +133,46 @@ def train_example():
         if ep % 5 == 0 or ep == 1:
             print(f"Epoch {ep:3d} | train_loss={train_loss:.6f} | val_loss={val_loss:.6f}")
 
-    # Plot predictions vs true for a random sequence from validation set
+    # Plot predictions vs true and GRU activations for a validation sequence
     seq = val_x[:1]                       # (1, T, obs_dim)
-    preds = preds_val[:1]                 # (1, T-1, obs_dim)
+    with torch.no_grad():
+        preds, activations = model(seq, return_activations=True)
     true = seq[:, 1:, :]
-    plt.figure(figsize=(10, 5))
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    obs_ax, act_ax = axes
     colors = plt.get_cmap("tab10")(np.linspace(0, 1, obs_dim))
     for d in range(obs_dim):
         series_color = colors[d]
-        plt.plot(
+        obs_ax.plot(
             true[0, :, d].cpu().numpy(),
             color=series_color,
             linestyle="-",
             label=f"dim_{d} true",
         )
-        plt.plot(
+        obs_ax.plot(
             preds[0, :, d].cpu().numpy(),
             color=series_color,
             linestyle="--",
             label=f"dim_{d} pred",
         )
-    plt.legend()
-    plt.title("Predictions vs True for a Random Validation Sequence")
-    plt.xlabel("Time Step")
-    plt.ylabel("Observation Value")
+
+    for unit in range(gru_hidden):
+        act_ax.plot(
+            activations[0, :, unit].cpu().numpy(),
+            label=f"unit_{unit}",
+        )
+
+    obs_ax.legend()
+    obs_ax.set_title("Predictions vs True for a Validation Sequence")
+    obs_ax.set_ylabel("Observation Value")
+
+    act_ax.legend()
+    act_ax.set_title("GRU Unit Activation Timeseries")
+    act_ax.set_xlabel("Time Step")
+    act_ax.set_ylabel("Activation")
+
+    fig.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
