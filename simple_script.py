@@ -82,9 +82,10 @@ def train_example():
         seed=seed + 1,
     )
     train_obs, _ = simulate_observations(train_cfg)
-    val_obs, _ = simulate_observations(val_cfg)
+    val_obs, val_latent = simulate_observations(val_cfg)
     train_x = torch.from_numpy(train_obs).to(device)
     val_x = torch.from_numpy(val_obs).to(device)
+    val_z = torch.from_numpy(val_latent).to(device)
 
     #model = GRUPredictor(obs_dim, gru_hidden).to(device)
     model = GRUPredictorWithMLP(obs_dim, gru_hidden).to(device)
@@ -139,8 +140,13 @@ def train_example():
         preds, activations = model(seq, return_activations=True)
     true = seq[:, 1:, :]
 
-    fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    obs_ax, act_ax = axes
+    fig = plt.figure(figsize=(12, 11))
+    gs = fig.add_gridspec(3, 2)
+    obs_ax = fig.add_subplot(gs[0, :])
+    act_ax = fig.add_subplot(gs[1, :], sharex=obs_ax)
+    true_phase_ax = fig.add_subplot(gs[2, 0])
+    gru_phase_ax = fig.add_subplot(gs[2, 1])
+
     colors = plt.get_cmap("tab10")(np.linspace(0, 1, obs_dim))
     for d in range(obs_dim):
         series_color = colors[d]
@@ -171,6 +177,22 @@ def train_example():
     act_ax.set_title("GRU Unit Activation Timeseries")
     act_ax.set_xlabel("Time Step")
     act_ax.set_ylabel("Activation")
+
+    true_phase_ax.plot(
+        val_z[0, :, 0].cpu().numpy(),
+        val_z[0, :, 1].cpu().numpy(),
+    )
+    true_phase_ax.set_title("True Latent Phase Portrait")
+    true_phase_ax.set_xlabel("latent x")
+    true_phase_ax.set_ylabel("latent v")
+
+    gru_phase_ax.plot(
+        activations[0, :, 0].cpu().numpy(),
+        activations[0, :, 1].cpu().numpy(),
+    )
+    gru_phase_ax.set_title("GRU Latent Phase Portrait")
+    gru_phase_ax.set_xlabel("gru unit 0")
+    gru_phase_ax.set_ylabel("gru unit 1")
 
     fig.tight_layout()
     plt.show()
