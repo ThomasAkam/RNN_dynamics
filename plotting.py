@@ -2,12 +2,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_validation_results(true_obs, pred_obs, gru_activity, true_latents):
+def plot_validation_results(
+    true_obs, pred_obs, gru_activity, true_latents, save_path=None
+):
     """Plot true vs predicted observations, GRU activations, and phase portraits
     for true latents and GRU activations."""
 
     # Setup axes.
-    fig = plt.figure(figsize=(12, 11))
+    fig = plt.figure(figsize=(10, 8))
     gs = fig.add_gridspec(3, 2)
     obs_ax = fig.add_subplot(gs[0, :])
     act_ax = fig.add_subplot(gs[1, :], sharex=obs_ax)
@@ -18,7 +20,7 @@ def plot_validation_results(true_obs, pred_obs, gru_activity, true_latents):
     obs_dim = true_obs.shape[2]
 
     colors = plt.get_cmap("tab10")(np.linspace(0, 1, obs_dim))
-    for d in range(obs_dim):
+    for d in range(min(obs_dim, 3)):
         series_color = colors[d]
         obs_ax.plot(
             true_obs[0, 1:, d].cpu().numpy(),
@@ -40,12 +42,14 @@ def plot_validation_results(true_obs, pred_obs, gru_activity, true_latents):
             label=f"unit_{unit}",
         )
 
-    obs_ax.legend()
-    obs_ax.set_title("Predictions vs True for a Validation Sequence")
+    obs_ax.set_xlim(0, true_obs.shape[1])
+    obs_ax.legend(loc="upper right")
+    obs_ax.set_title("Predicted vs true observation timeseries")
     obs_ax.set_ylabel("Observation Value")
 
-    act_ax.legend()
-    act_ax.set_title("GRU Unit Activation Timeseries")
+    act_ax.set_xlim(0, true_obs.shape[1])
+    act_ax.legend(loc="upper right")
+    act_ax.set_title("GRU unit activation timeseries")
     act_ax.set_xlabel("Time Step")
     act_ax.set_ylabel("Activation")
 
@@ -54,7 +58,7 @@ def plot_validation_results(true_obs, pred_obs, gru_activity, true_latents):
         true_latents[0, :, 0].cpu().numpy(),
         true_latents[0, :, 1].cpu().numpy(),
     )
-    true_phase_ax.set_title("True Latent Phase Portrait")
+    true_phase_ax.set_title("True latent phase portrait")
     true_phase_ax.set_xlabel("latent x")
     true_phase_ax.set_ylabel("latent v")
 
@@ -62,9 +66,13 @@ def plot_validation_results(true_obs, pred_obs, gru_activity, true_latents):
         gru_activity[0, :, 0].cpu().numpy(),
         gru_activity[0, :, 1].cpu().numpy(),
     )
-    gru_phase_ax.set_title("GRU Latent Phase Portrait")
+    gru_phase_ax.set_title("GRU latent phase portrait")
     gru_phase_ax.set_xlabel("gru unit 0")
     gru_phase_ax.set_ylabel("gru unit 1")
 
     fig.tight_layout()
+
+    if save_path is not None:
+        plt.savefig(save_path)
+
     plt.show()

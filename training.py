@@ -1,5 +1,7 @@
-import numpy as np
+"""Functions for training the GRU predictor model on data."""
+
 import torch
+from torch.utils.data import DataLoader
 
 
 def train_model(
@@ -13,25 +15,31 @@ def train_model(
     reg_lambda=0.0,
     weight_decay=0.0,
 ):
-    """Train the GRU predictor model on the training observations and evaluate on validation data.
-    Returns the final validation predictions and GRU activations."""
-    prev_val_loss = None
-    val_preds = None
-    gru_activity = None
+    """Train the GRU predictor model and evaluate on validation data.
 
-    def iterate_batches(x_tensor):
-        n = x_tensor.shape[0]
-        indices = np.arange(n)
-        np.random.shuffle(indices)
-        for i in range(0, n, batch_size):
-            batch_idx = indices[i : i + batch_size]
-            yield x_tensor[batch_idx]
+    Args:
+        model: Sequence prediction model.
+        train_obs: Training observation tensor of shape (n_sequences, seq_len, obs_dim).
+        val_obs: Validation observation tensor of shape (m_sequences, seq_len, obs_dim).
+        epochs: Maximum number of training epochs.
+        batch_size: Mini-batch size used by the training DataLoader.
+        optimizer: Torch optimizer used to update model parameters.
+        loss_fn: Loss function applied to one-step-ahead predictions.
+        reg_lambda: L2 penalty coefficient applied to GRU activations.
+        weight_decay: L2 penalty coefficient applied to model parameters.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor]:
+            ``(val_preds, val_activity)`` from the final validation forward pass.
+    """
+    prev_val_loss = None
+    train_loader = DataLoader(train_obs, batch_size=batch_size, shuffle=True)
 
     for ep in range(1, epochs + 1):
         model.train()
         train_loss = 0.0
         batches = 0
-        for batch in iterate_batches(train_obs):
+        for batch in train_loader:
             optimizer.zero_grad()
             preds, gru_activity = model(batch, return_activations=True)
             target = batch[:, 1:, :]
@@ -39,7 +47,9 @@ def train_model(
             if reg_lambda > 0.0:  # Apply L2 regularization to GRU activations.
                 loss += reg_lambda * gru_activity.pow(2).mean()
             if weight_decay > 0.0:  # Apply L2 regularization to model parameters.
-                loss += weight_decay * sum(param.pow(2).sum() for param in model.parameters())
+                loss += weight_decay * sum(
+                    param.pow(2).sum() for param in model.parameters()
+                )
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
@@ -61,6 +71,8 @@ def train_model(
         prev_val_loss = val_loss
 
         if ep % 5 == 0 or ep == 1:
-            print(f"Epoch {ep:3d} | train_loss={train_loss:.6f} | val_loss={val_loss:.6f}")
+            print(
+                f"Epoch {ep:3d} | train_loss={train_loss:.6f} | val_loss={val_loss:.6f}"
+            )
 
     return val_preds, val_activity

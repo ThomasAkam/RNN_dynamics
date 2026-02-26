@@ -3,31 +3,33 @@ from torch import nn
 
 # GRU predictor
 
+
 class GRUPredictor(nn.Module):
     """GRU-based predictor for one-step-ahead forecasting of multivariate time series.
-    Input and/or output can be optionally transformed with a ReLU MLP.  To use linear 
+    Input and/or output can be optionally transformed with a ReLU MLP.  To use linear
     input/output mapping, set embed_dim / decode_dim to None.
     """
-    def __init__(self, obs_dim, hidden_size, embed_dim=8, decode_dim=8):
+
+    def __init__(self, obs_dim, gru_dim, embed_dim=8, decode_dim=8):
         """Args:
-            obs_dim: dimensionality of observed vector at each time step
-            hidden_size: number of GRU hidden units
-            embed_dim: dimension of ReLU embedding layer for inputs, 
-                       set to None for linear input mapping.
-            decode_dim: dimension of ReLU layer for GRU output transformation,
-                        set to None for linear output mapping."""
+        obs_dim: dimensionality of observed vector at each time step
+        gru_dim: number of GRU hidden units
+        embed_dim: dimension of ReLU embedding layer for inputs,
+                   set to None for linear input mapping.
+        decode_dim: dimension of ReLU layer for GRU output transformation,
+                    set to None for linear output mapping."""
         super().__init__()
-        if embed_dim is None: # Linear input mapping.
+        if embed_dim is None:  # Linear input mapping.
             self.input_map = nn.Identity()
-            self.gru = nn.GRU(obs_dim, hidden_size, batch_first=True)
-        else: # Embed input using a ReLU layer.
+            self.gru = nn.GRU(obs_dim, gru_dim, batch_first=True)
+        else:  # Embed input using a ReLU layer.
             self.input_map = nn.Sequential(nn.Linear(obs_dim, embed_dim), nn.ReLU())
-            self.gru = nn.GRU(embed_dim, hidden_size, batch_first=True)
-        if decode_dim is None: # Linear output mapping.
-            self.output_map = nn.Linear(hidden_size, obs_dim)
-        else: # Transform GRU output with a ReLU layer.
+            self.gru = nn.GRU(embed_dim, gru_dim, batch_first=True)
+        if decode_dim is None:  # Linear output mapping.
+            self.output_map = nn.Linear(gru_dim, obs_dim)
+        else:  # Transform GRU output with a ReLU layer.
             self.output_map = nn.Sequential(
-                nn.Linear(hidden_size, decode_dim),
+                nn.Linear(gru_dim, decode_dim),
                 nn.ReLU(),
                 nn.Linear(decode_dim, obs_dim),
             )
